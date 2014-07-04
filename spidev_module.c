@@ -16,6 +16,9 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
  */
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include <Python.h>
 #include "structmember.h"
@@ -27,6 +30,16 @@
 #include <sys/ioctl.h>
 
 #define SPIDEV_MAXPATH 4096
+
+#if PY_MAJOR_VERSION >= 3
+  #define PyInt_Check PyLong_Check
+  #define PyInt_AS_LONG PyLong_AS_LONG
+  #define PyInt_AsLong PyLong_AsLong
+#endif
+
+#ifndef Py_TYPE
+  #define Py_TYPE(ob) (((PyObject*)(ob))->ob_type)
+#endif
 
 PyDoc_STRVAR(SpiDev_module_doc,
 	"This module defines an object type that allows SPI transactions\n"
@@ -90,7 +103,7 @@ SpiDev_dealloc(SpiDevObject *self)
 	PyObject *ref = SpiDev_close(self);
 	Py_XDECREF(ref);
 
-	self->ob_type->tp_free((PyObject *)self);
+	Py_TYPE(self)->tp_free((PyObject *)self);
 }
 
 static char *wrmsg = "Argument must be a list of at least one, "
@@ -774,8 +787,7 @@ static PyMethodDef SpiDev_methods[] = {
 };
 
 static PyTypeObject SpiDevObjectType = {
-	PyObject_HEAD_INIT(NULL)
-	0,				/* ob_size */
+	PyVarObject_HEAD_INIT(NULL, 0)
 	"SpiDev",			/* tp_name */
 	sizeof(SpiDevObject),		/* tp_basicsize */
 	0,				/* tp_itemsize */
@@ -815,23 +827,48 @@ static PyTypeObject SpiDevObjectType = {
 	SpiDev_new,			/* tp_new */
 };
 
-static PyMethodDef SpiDev_module_methods[] = {
-	{NULL}
+PyMethodDef SpiDev_module_methods[] = {
+	{NULL},
 };
 
 #ifndef PyMODINIT_FUNC	/* declarations for DLL import/export */
 #define PyMODINIT_FUNC void
 #endif
-PyMODINIT_FUNC
-initspidev(void)
-{
+
+#if PY_MAJOR_VERSION >= 3
+  #define MOD_ERROR_VAL NULL
+  #define MOD_SUCCESS_VAL(val) val
+  #define MOD_INIT(name) PyMODINIT_FUNC PyInit_##name(void)
+  #define MOD_DEF(ob, name, doc, methods) \
+    static struct PyModuleDef module_def = { \
+      PyModuleDef_HEAD_INIT, name, doc, -1, methods, }; \
+    ob = PyModule_Create(&module_def);
+#else
+  #define MOD_ERROR_VAL
+  #define MOD_SUCCESS_VAL(val)
+  #define MOD_INIT(name) void init##name(void)
+  #define MOD_DEF(ob, name, doc, methods) \
+    ob = Py_InitModule3(name, methods, doc);
+#endif
+
+MOD_INIT(spidev) {
 	PyObject* m;
 
-	if (PyType_Ready(&SpiDevObjectType) < 0)
-		return;
+	MOD_DEF(m, "spidev", SpiDev_module_doc, SpiDev_module_methods)
 
-	m = Py_InitModule3("spidev", SpiDev_module_methods, SpiDev_module_doc);
+	if (PyType_Ready(&SpiDevObjectType) < 0)
+		return MOD_ERROR_VAL;
+
+
+  if (m == NULL)
+    return MOD_ERROR_VAL;
+
 	Py_INCREF(&SpiDevObjectType);
 	PyModule_AddObject(m, "SpiDev", (PyObject *)&SpiDevObjectType);
+
+  return MOD_SUCCESS_VAL(m);
 }
 
+#ifdef __cplusplus
+} // extern "C"
+#endif
